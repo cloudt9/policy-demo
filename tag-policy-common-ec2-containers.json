@@ -1,0 +1,165 @@
+{
+    "tags": {
+        "Name": {
+            "tag_key": {
+                "@@assign": "Name",
+                "@@operators_allowed_for_child_policies": ["@@none"]
+            }
+        },
+        "cmdb": {
+            "tag_key": {
+                "@@assign": "cmdb",
+                "@@operators_allowed_for_child_policies": ["@@none"]
+            }
+        },
+        "business_unit": {
+            "tag_key": {
+                "@@assign": "business_unit",
+                "@@operators_allowed_for_child_policies": ["@@none"]
+            }
+        },
+        "cost_centre": {
+            "tag_key": {
+                "@@assign": "cost_centre",
+                "@@operators_allowed_for_child_policies": ["@@none"]
+            }
+        },
+        "owner": {
+            "tag_key": {
+                "@@assign": "owner",
+                "@@operators_allowed_for_child_policies": ["@@none"]
+            }
+        },
+        "decription": {
+            "tag_key": {
+                "@@assign": "decription",
+                "@@operators_allowed_for_child_policies": ["@@none"]
+            }
+        },
+        "environment": {
+            "tag_key": {
+                "@@assign": "environment",
+                "@@operators_allowed_for_child_policies": ["@@none"]
+            },
+            "tag_value": {
+                "@@assign": [
+                    "dev",
+                    "uat",
+                    "sit",
+                    "pre-prod",
+                    "prod"
+                ]
+            }
+        },
+        "managed_with": {
+            "tag_key": {
+                "@@assign": "managed_with",
+                "@@operators_allowed_for_child_policies": ["@@none"]
+            }
+        },
+        "infra_code_repository": {
+            "tag_key": {
+                "@@assign": "infra_code_repository",
+                "@@operators_allowed_for_child_policies": ["@@none"]
+            }
+        },
+        "app_tier": {
+            "tag_key": {
+                "@@assign": "app_tier",
+                "@@operators_allowed_for_child_policies": ["@@none"]
+            },
+            "tag_value": {
+                "@@assign": [
+                    "tier1",
+                    "tier2",
+                    "tier3"                    
+                ]
+            }
+        },
+        "os_long": {
+            "tag_key": {
+                "@@assign": "os_long",
+                "@@operators_allowed_for_child_policies": ["@@none"]
+            }
+        },
+        "role": {
+            "tag_key": {
+                "@@assign": "role",
+                "@@operators_allowed_for_child_policies": ["@@none"]
+            },
+            "enforced_for": {
+                "@@assign": [
+                    "ec2:instance",
+                    "ecs:cluster",
+                    "eks:cluster"
+                ]
+            }
+        },
+        "needed_hours": {
+            "tag_key": {
+                "@@assign": "needed_hours",
+                "@@operators_allowed_for_child_policies": ["@@none"]
+            },
+            "tag_value": {
+                "@@assign": [
+                    "24x7",
+                    "WorkDay",
+                    "ExtendedDay",
+                    "ExtendedWeekends"               
+                ]
+            },
+            "enforced_for": {
+                "@@assign": [
+                    "ec2:instance",
+                    "ecs:cluster",
+                    "eks:cluster"
+                ]
+            }
+        },
+        "dynatrace_hostgroup": {
+            "tag_key": {
+                "@@assign": "dynatrace_hostgroup",
+                "@@operators_allowed_for_child_policies": ["@@none"]
+            },
+            "enforced_for": {
+                "@@assign": [
+                    "ec2:instance",
+                    "ecs:cluster",
+                    "eks:cluster"
+                ]
+            }
+        },
+        "patch_group": {
+            "tag_key": {
+                "@@assign": "patch_group",
+                "@@operators_allowed_for_child_policies": ["@@none"]
+            },
+            "enforced_for": {
+                "@@assign": [
+                    "ec2:instance",
+                    "ecs:cluster",
+                    "eks:cluster"
+                ]
+            }
+        },
+        "cloud_type": {
+            "tag_key": {
+                "@@assign": "cloud_type",
+                "@@operators_allowed_for_child_policies": ["@@none"]
+            },
+            "tag_value": {
+                "@@assign": [
+                    "pet",
+                    "cattle"               
+                ]
+            },
+            "enforced_for": {
+                "@@assign": [
+                    "ec2:instance",
+                    "ecs:cluster",
+                    "eks:cluster"
+                ]
+            }
+        }
+    }
+}
