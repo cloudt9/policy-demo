@@ -1,0 +1,307 @@
+Parameters:
+  LatestAmiId:
+    Description: "AMI for EC2"
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+  DBName:
+    Default: wordpress
+    Description: My task Database
+    Type: String
+  DBUser:
+    NoEcho: 'False'
+    Description: Username for MySQL database access
+    Type: String
+  DBPassword:
+    NoEcho: 'False'
+    Description: Password MySQL database access
+    Type: String
+  DBInstanceID:
+    Description: name of the DB instance
+    Type: String
+
+
+Resources:
+  myVPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: 'true'
+      EnableDnsHostnames: 'true'
+      Tags:
+       - Key: Name
+         Value: task-vpc
+  InternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: task-igw
+  InternetGatewayAttachment:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref myVPC
+      InternetGatewayId: !Ref InternetGateway
+  RouteTable: 
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref myVPC
+      Tags:
+        - Key: Name
+          Value: task-rt
+  RouteTableDefaultIPv4: 
+    Type: 'AWS::EC2::Route'
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: '0.0.0.0/0'
+      GatewayId: !Ref InternetGateway
+  RouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref myPublicSubnet
+      RouteTableId: !Ref RouteTable
+  myPrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref myVPC
+      CidrBlock: 10.0.1.0/24
+      AvailabilityZone: "us-east-1a"
+      Tags:
+      - Key: Name
+        Value: task-db-subnet1
+  myPrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref myVPC
+      CidrBlock: 10.0.2.0/24
+      AvailabilityZone: "us-east-1b"
+      Tags:
+      - Key: Name
+        Value: task-db-subnet2
+  myPublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref myVPC
+      CidrBlock: 10.0.3.0/24
+      AvailabilityZone: "us-east-1c"
+      MapPublicIpOnLaunch: true
+      Tags:
+      - Key: Name
+        Value: task-ec2-subnet
+  WPEIP:
+    Type: AWS::EC2::EIP
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      InstanceId: !Ref myEC2Instance
+  myEC2Instance: 
+    Type: 'AWS::EC2::Instance'
+    Properties: 
+      InstanceType: "t2.micro"
+      ImageId: !Ref "LatestAmiId"
+      IamInstanceProfile: !Ref WordpressInstanceProfile
+      SecurityGroupIds: 
+        - !Ref InstanceSecurityGroup
+      SubnetId: !Ref myPublicSubnet
+      Tags:
+        - Key: Name
+          Value: task-Wordpress
+      UserData: 
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+
+          # STEP 1 - Setpassword & DB Variables
+          DBName='wordpress'
+          DBUser='wordpress'
+          DBPassword='w0rdpr355'
+
+          # STEP 2 - Install system software - including Web and DB
+          dnf install wget php-mysqlnd httpd php-fpm php-mysqli mariadb105-server php-json php php-devel -y
+          # STEP 3 - Web and DB Servers Online - and set to startup
+          systemctl enable httpd
+          systemctl start httpd
+          
+          # STEP 4 - Set Mariadb Root Password
+          mysqladmin -u root password $DBPassword
+          # STEP 5 - Install Wordpress
+          wget https://wordpress.org/latest.tar.gz -P /var/www/html
+          cd /var/www/html
+          tar -zxvf latest.tar.gz
+          cp -rvf wordpress/* .
+          rm -R wordpress
+          rm latest.tar.gz
+          # STEP 6 - Configure Wordpress
+          cp ./wp-config-sample.php ./wp-config.php
+          sed -i "s/'database_name_here'/'$DBName'/g" wp-config.php
+          sed -i "s/'username_here'/'$DBUser'/g" wp-config.php
+          sed -i "s/'password_here'/'$DBPassword'/g" wp-config.php
+          # Step 6a - permissions 
+          usermod -a -G apache ec2-user   
+          chown -R ec2-user:apache /var/www
+          chmod 2775 /var/www
+          find /var/www -type d -exec chmod 2775 {} \;
+          find /var/www -type f -exec chmod 0664 {} \;
+  myDBSubnetGroup:
+    Type: "AWS::RDS::DBSubnetGroup"
+    Properties: 
+      DBSubnetGroupDescription: WordPress DB Subnet Group
+      SubnetIds: 
+        - !Ref "myPrivateSubnet1"
+        - !Ref "myPrivateSubnet2"
+      Tags:
+        - Key: Name
+          Value: task-db-subnetgroup
+  myDBInstance:
+    Type: 'AWS::RDS::DBInstance'
+    Properties:
+      DBSubnetGroupName: !Ref myDBSubnetGroup
+      DBInstanceClass: "db.t3.micro"
+      Engine: "mysql"
+      EngineVersion: "8.0.32"
+      AllocatedStorage: 20
+      DBInstanceIdentifier: !Ref "DBInstanceID"
+      VPCSecurityGroups: 
+        - !Ref "myDBSecurityGroup"
+      DBName: !Ref DBName
+      MasterUsername: !Ref DBUser
+      MasterUserPassword: !Ref DBPassword
+  
+  myDBInstanceUserDataWorkaroundLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: "index.lambda_handler"
+      Role: !GetAtt 'LambdaExecutionRole.Arn'
+      Runtime: python3.9
+      Code: #bootstraps DB Instance with Wordpress DB
+        ZipFile:
+          Fn::Sub: |
+            import boto3
+            import subprocess
+
+            def lambda_handler(event, context):
+                rds = boto3.client('rds')
+                db_instance_identifier = event['detail']['requestParameters']['dBInstanceIdentifier']
+
+        
+            script = """        
+            #!/bin/bash -xe    
+
+            # STEP 1 - Setpassword & DB Variables
+            dnf install wget mariadb105-server -y
+            # STEP 2 - DB Servers Online - and set to startup
+            systemctl enable mariadb
+            systemctl start mariadb
+            # STEP 7 Create Wordpress DB
+            echo "CREATE DATABASE $DBName;" >> /tmp/db.setup
+            echo "CREATE USER '$DBUser'@'localhost' IDENTIFIED BY '$DBPassword';" >> /tmp/db.setup
+            echo "GRANT ALL ON $DBName.* TO '$DBUser'@'localhost';" >> /tmp/db.setup
+            echo "FLUSH PRIVILEGES;" >> /tmp/db.setup
+            mysql -u root --password=$DBPassword < /tmp/db.setup
+            sudo rm /tmp/db.setup
+            """
+            subprocess.run(script, shell=True)
+  LambdaExecutionRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - 'sts:AssumeRole'
+      Policies:
+      - PolicyName: LambdaExecutionPolicy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - 'logs:CreateLogGroup'
+            - 'logs:CreateLogStream'
+            - 'logs:PutLogEvents'
+            Resource: 'arn:aws:logs:*:*:*'
+          - Effect: Allow
+            Action:
+            - 'rds:DescribeDBInstances'
+            Resource: '*'
+
+  myDBSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Enable SSH access via port 22 IPv4 & v6
+      VpcId: !Ref myVPC
+      SecurityGroupIngress:
+      - Description: Allow all traffic from InstanceSecurityGroup
+        IpProtocol: -1
+        SourceSecurityGroupId: !GetAtt InstanceSecurityGroup.GroupId
+  InstanceSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      VpcId: !Ref myVPC
+      GroupDescription: Enable SSH access via port 22 IPv4
+      SecurityGroupIngress:
+        - Description: 'Allow SSH IPv4 IN'
+          IpProtocol: tcp
+          FromPort: '22'
+          ToPort: '22'
+          CidrIp: '0.0.0.0/0'
+        - Description: 'Allow HTTP IPv4 IN'
+          IpProtocol: tcp
+          FromPort: '80'
+          ToPort: '80'
+          CidrIp: '0.0.0.0/0'
+  myBucket:
+    Type: 'AWS::S3::Bucket'
+    Properties:
+      BucketName: wordpressbukkett
+  WordpressRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - "arn:aws:iam::aws:policy/AmazonS3FullAccess"
+  WordpressInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles: 
+        - !Ref WordpressRole
+  WordpressBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref myBucket
+      PolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Action:
+              - 's3:GetObject'
+            Effect: Allow
+            Resource: !Join
+              - ''
+              - - 'arn:aws:s3:::'
+                - !Ref myBucket
+                - /*
+            Principal:
+              AWS: !GetAtt WordpressRole.Arn     
+Outputs:
+  InstancePublicIp:
+    Description: The public IP of the EC2 instance
+    Value: !GetAtt myEC2Instance.PublicIp
+
+
+
+
+
+
+
