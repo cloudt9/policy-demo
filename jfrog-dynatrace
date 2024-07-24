@@ -1,0 +1,67 @@
+name: Deploy to JFrog
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step to checkout the repository code
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Step to setup environment variables from secrets and static values
+      - name: Setup Environment Variables
+        run: |
+          echo "JFROG_URL=${{ secrets.JFROG_URL }}" >> $GITHUB_ENV
+          echo "JFROG_ACCESS_TOKEN=${{ secrets.JFROG_ACCESS_TOKEN }}" >> $GITHUB_ENV
+          echo "DYNATRACE_OPERATOR_IMAGE=docker.io/dynatrace/dynatrace-operator:v0.15.0" >> $GITHUB_ENV
+          echo "DYNATRACE_ACTIVEGATE_IMAGE=public.ecr.aws/dynatrace/dynatrace-activegate:1.281.38.20240131-193708" >> $GITHUB_ENV
+          echo "DYNATRACE_JFROG_REPO=${{ secrets.DYNATRACE_JFROG_REPO }}" >> $GITHUB_ENV
+
+      # Step to setup JFrog CLI
+      - name: Set up JFrog CLI
+        run: |
+          curl -fL https://getcli.jfrog.io | sh
+          ./jf setup --url=$JFROG_URL --access-token=$JFROG_ACCESS_TOKEN
+
+      # Step to create JFrog repository
+      - name: Create JFrog Repository
+        run: ./jf rt repo-create repo-config.json
+        env:
+          JFROG_ACCESS_TOKEN: ${{ secrets.JFROG_ACCESS_TOKEN }}
+
+      # Step to copy Dynatrace images to JFrog
+      - name: Copy Dynatrace Images
+        run: |
+          IMAGES=(
+            "$DYNATRACE_OPERATOR_IMAGE"
+            "$DYNATRACE_ACTIVEGATE_IMAGE"
+          )
+          REPO="$DYNATRACE_JFROG_REPO"
+          for IMAGE in "${IMAGES[@]}"; do
+            ./jf rt docker-pull $IMAGE
+            NEW_IMAGE="${REPO}/$(basename $IMAGE)"
+            ./jf rt docker-push $IMAGE $NEW_IMAGE
+          done
+        env:
+          JFROG_ACCESS_TOKEN: ${{ secrets.JFROG_ACCESS_TOKEN }}
+
+
+
+
+{
+    "rclass": "local",
+    "key": "<dynatrace-jfrog-repo>",
+    "packageType": "docker",
+    "description": "Repository for Dynatrace images",
+    "repoLayoutRef": "simple-default",
+    "dockerApiVersion": "V2",
+    "maxUniqueTags": 0,
+    "blockPushingSchema1": true
+  }
+  
